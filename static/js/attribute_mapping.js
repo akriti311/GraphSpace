@@ -8,6 +8,10 @@ var attributeMapping = {
   discoveredAttributes: null,
 
   init: function () {
+    if ( typeof graph_json === 'undefined' || !graph_json ) {
+      this.discoveredAttributes = { nodes: {}, edges: {} };
+      return;
+    }
     this.discoveredAttributes = this.extractAttributes( graph_json );
   },
 
@@ -68,6 +72,30 @@ var attributeMapping = {
       values: unique.sort(),
       count: values.length
     };
+  },
+
+  bindPanelEvents: function () {
+    $( '#mapAttributesBtn' ).off( 'click' ).on( 'click', function ( e ) {
+      e.preventDefault();
+      attributeMapping.openPanel();
+    } );
+
+    $( '#backToLayoutEditorBtn' ).off( 'click' ).on( 'click', function ( e ) {
+      e.preventDefault();
+      attributeMapping.closePanel();
+    } );
+  },
+
+  openPanel: function () {
+    this.init();
+
+    $( '.gs-sidebar-nav' ).removeClass( 'active' );
+    $( '#attributeMappingSideBar' ).addClass( 'active' );
+  },
+
+  closePanel: function () {
+    $( '.gs-sidebar-nav' ).removeClass( 'active' );
+    $( '#layoutEditorSideBar' ).addClass( 'active' );
   }
 };
 

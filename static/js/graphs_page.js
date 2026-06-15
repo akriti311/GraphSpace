@@ -1451,6 +1451,9 @@ var graphPage = {
 
       cytoscapeGraph.contextMenu.init( graphPage.cyGraph );
 
+      attributeMapping.init();
+      attributeMapping.bindPanelEvents();
+
       graphPage.layoutEditor.undoRedoManager = new UndoManager(
         onUndo = function ( item ) {
           if ( item ) {
