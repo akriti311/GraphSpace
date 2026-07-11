@@ -7,6 +7,13 @@ var attributeMapping = {
 
   discoveredAttributes: null,
 
+  COLOR_VISUAL_PROPERTIES: [ 'background-color', 'line-color' ],
+
+  DEFAULT_COLORS: [
+    '#3366cc', '#dc3912', '#ff9900', '#109618',
+    '#990099', '#0099c6', '#dd4477', '#66aa00'
+  ],
+
   // Which visual properties support which mapping types.
   VISUAL_PROPERTIES: {
     node: [
@@ -103,24 +110,25 @@ var attributeMapping = {
   },
 
   bindFormEvents: function () {
-    // When element type (nodes / edges) changes, reset to discrete mapping
-    // and repopulate both dropdowns based on the new element type.
     $( '#mappingElementType' ).off( 'change' ).on( 'change', function () {
       $( '#mappingMappingType' ).val( 'discrete' );
       attributeMapping.populateAttributeDropdown();
       attributeMapping.populateVisualPropertyDropdown();
+      attributeMapping.updateMappingConfig();
     } );
 
-    // When attribute changes, infer mapping type (continuous vs discrete)
-    // from the discovered attribute meta and refresh visual properties.
     $( '#mappingAttribute' ).off( 'change' ).on( 'change', function () {
       attributeMapping.syncMappingTypeFromAttribute();
-      attributeMapping.populateVisualPropertyDropdown();
+      attributeMapping.updateMappingConfig();
     } );
 
-    // When mapping type is manually changed, just refresh visual properties.
     $( '#mappingMappingType' ).off( 'change' ).on( 'change', function () {
       attributeMapping.populateVisualPropertyDropdown();
+      attributeMapping.updateMappingConfig();
+    } );
+
+    $( '#mappingVisualProperty' ).off( 'change' ).on( 'change', function () {
+      attributeMapping.updateMappingConfig();
     } );
   },
 
@@ -168,6 +176,116 @@ var attributeMapping = {
     var mappingType = meta.type === 'numerical' ? 'continuous' : 'discrete';
     $( '#mappingMappingType' ).val( mappingType );
     this.populateVisualPropertyDropdown();
+  },
+
+  isColorVisualProperty: function ( propertyId ) {
+    return this.COLOR_VISUAL_PROPERTIES.indexOf( propertyId ) !== -1;
+  },
+
+  isSelectionComplete: function () {
+    return !!(
+      $( '#mappingAttribute' ).val() &&
+      $( '#mappingVisualProperty' ).val()
+    );
+  },
+
+  getDefaultColor: function ( index ) {
+    return this.DEFAULT_COLORS[ index % this.DEFAULT_COLORS.length ];
+  },
+
+  clearMappingConfig: function () {
+    $( '#mappingConfigContent .colorpicker-component' ).each( function () {
+      var $picker = $( this );
+      if ( $picker.data( 'colorpicker' ) ) {
+        $picker.colorpicker( 'destroy' );
+      }
+    } );
+    $( '#mappingConfigContent' ).empty();
+    $( '#mappingConfigSection' ).hide();
+  },
+
+  renderConfigMessage: function ( message ) {
+    $( '#mappingConfigContent' ).html(
+      $( '<p>', { 'class': 'text-muted text-center', text: message } )
+    );
+    $( '#mappingConfigSection' ).show();
+  },
+
+  initConfigColorPickers: function () {
+    $( '#mappingConfigContent .colorpicker-component' ).each( function () {
+      $( this ).colorpicker();
+    } );
+  },
+
+  renderDiscreteColorConfig: function ( meta ) {
+    var self = this;
+    var $container = $( '<div>' );
+
+    _.each( meta.values, function ( value, index ) {
+      var $row = $( '<div>', { 'class': 'form-group' } );
+      $row.append( $( '<label>', {
+        'class': 'col-sm-5 control-label',
+        text: String( value )
+      } ) );
+
+      var $pickerWrap = $( '<div>', { 'class': 'col-sm-7' } );
+      var $picker = $( '<div>', {
+        'class': 'input-group colorpicker-component mapping-discrete-color'
+      } );
+      $picker.attr( 'data-category-value', value );
+      $picker.append( $( '<input>', {
+        type: 'text',
+        'class': 'form-control',
+        value: self.getDefaultColor( index )
+      } ) );
+      $picker.append( $( '<span>', { 'class': 'input-group-addon' } ).append( $( '<i>' ) ) );
+
+      $pickerWrap.append( $picker );
+      $row.append( $pickerWrap );
+      $container.append( $row );
+    } );
+
+    $( '#mappingConfigContent' ).html( $container );
+    this.initConfigColorPickers();
+    $( '#mappingConfigSection' ).show();
+  },
+
+  _buildColorPicker: function ( defaultColor ) {
+    var $picker = $( '<div>', { 'class': 'input-group colorpicker-component' } );
+    $picker.append( $( '<input>', {
+      type: 'text',
+      'class': 'form-control',
+      value: defaultColor
+    } ) );
+    $picker.append( $( '<span>', { 'class': 'input-group-addon' } ).append( $( '<i>' ) ) );
+    return $picker;
+  },
+
+  updateMappingConfig: function () {
+    this.clearMappingConfig();
+
+    if ( !this.isSelectionComplete() ) {
+      return;
+    }
+
+    var meta = this.getSelectedAttributeMeta();
+    var visualProperty = $( '#mappingVisualProperty' ).val();
+    var mappingType = this.getSelectedMappingType();
+
+    if ( !meta ) {
+      return;
+    }
+
+    if ( mappingType === 'discrete' && meta.type === 'categorical' ) {
+      if ( this.isColorVisualProperty( visualProperty ) ) {
+        this.renderDiscreteColorConfig( meta );
+      } else {
+        this.renderConfigMessage( 'Configuration for this visual property is coming soon.' );
+      }
+      return;
+    }
+
+    this.renderConfigMessage( 'This attribute and mapping type combination is not supported yet.' );
   },
 
   populateAttributeDropdown: function () {
@@ -227,6 +345,7 @@ var attributeMapping = {
 
   openPanel: function () {
     this.init();
+    this.clearMappingConfig();
     this.populateAttributeDropdown();
     this.populateVisualPropertyDropdown();
 
