@@ -250,6 +250,39 @@ var attributeMapping = {
     $( '#mappingConfigSection' ).show();
   },
 
+  renderContinuousColorConfig: function ( meta ) {
+    var $container = $( '<div>' );
+
+    $container.append( $( '<p>', {
+      'class': 'text-center text-muted',
+      text: 'Range: ' + meta.min + ' to ' + meta.max
+    } ) );
+
+    var lowRow = $( '<div>', { 'class': 'form-group' } );
+    lowRow.append( $( '<label>', {
+      'class': 'col-sm-5 control-label',
+      text: 'Low (' + meta.min + ')'
+    } ) );
+    var $lowPicker = this._buildColorPicker( '#ffffcc' );
+    $lowPicker.addClass( 'mapping-continuous-low' );
+    lowRow.append( $( '<div>', { 'class': 'col-sm-7' } ).append( $lowPicker ) );
+    $container.append( lowRow );
+
+    var highRow = $( '<div>', { 'class': 'form-group' } );
+    highRow.append( $( '<label>', {
+      'class': 'col-sm-5 control-label',
+      text: 'High (' + meta.max + ')'
+    } ) );
+    var $highPicker = this._buildColorPicker( '#cc0000' );
+    $highPicker.addClass( 'mapping-continuous-high' );
+    highRow.append( $( '<div>', { 'class': 'col-sm-7' } ).append( $highPicker ) );
+    $container.append( highRow );
+
+    $( '#mappingConfigContent' ).html( $container );
+    this.initConfigColorPickers();
+    $( '#mappingConfigSection' ).show();
+  },
+
   _buildColorPicker: function ( defaultColor ) {
     var $picker = $( '<div>', { 'class': 'input-group colorpicker-component' } );
     $picker.append( $( '<input>', {
@@ -279,6 +312,15 @@ var attributeMapping = {
     if ( mappingType === 'discrete' && meta.type === 'categorical' ) {
       if ( this.isColorVisualProperty( visualProperty ) ) {
         this.renderDiscreteColorConfig( meta );
+      } else {
+        this.renderConfigMessage( 'Configuration for this visual property is coming soon.' );
+      }
+      return;
+    }
+
+    if ( mappingType === 'continuous' && meta.type === 'numerical' ) {
+      if ( this.isColorVisualProperty( visualProperty ) ) {
+        this.renderContinuousColorConfig( meta );
       } else {
         this.renderConfigMessage( 'Configuration for this visual property is coming soon.' );
       }
