@@ -6,6 +6,7 @@ var attributeMapping = {
   RESERVED_EDGE_ATTRS: [ 'id', 'source', 'target', 'name', 'is_directed', 'popup', 'k' ],
 
   discoveredAttributes: null,
+  styleBeforeMapping: null,
 
   COLOR_VISUAL_PROPERTIES: [ 'background-color', 'line-color' ],
 
@@ -106,6 +107,11 @@ var attributeMapping = {
       attributeMapping.closePanel();
     } );
 
+    $( '#applyMappingBtn' ).off( 'click' ).on( 'click', function ( e ) {
+      e.preventDefault();
+      attributeMapping.applyMapping();
+    } );
+
     this.bindFormEvents();
   },
 
@@ -187,6 +193,13 @@ var attributeMapping = {
       $( '#mappingAttribute' ).val() &&
       $( '#mappingVisualProperty' ).val()
     );
+  },
+
+  getColorPickerValue: function ( $picker ) {
+    if ( $picker.data( 'colorpicker' ) ) {
+      return $picker.colorpicker( 'getValue' );
+    }
+    return $picker.find( 'input' ).val();
   },
 
   getDefaultColor: function ( index ) {
@@ -330,6 +343,175 @@ var attributeMapping = {
     this.renderConfigMessage( 'This attribute and mapping type combination is not supported yet.' );
   },
 
+  isContinuousColorMappingReady: function () {
+    if ( !this.isSelectionComplete() ) {
+      return false;
+    }
+
+    var meta = this.getSelectedAttributeMeta();
+    var visualProperty = $( '#mappingVisualProperty' ).val();
+
+    return !!(
+      meta &&
+      meta.type === 'numerical' &&
+      this.getSelectedMappingType() === 'continuous' &&
+      this.isColorVisualProperty( visualProperty ) &&
+      $( '#mappingConfigContent .mapping-continuous-low' ).length > 0 &&
+      $( '#mappingConfigContent .mapping-continuous-high' ).length > 0
+    );
+  },
+
+  getContinuousColorMappingFromUI: function () {
+    if ( !this.isContinuousColorMappingReady() ) {
+      return null;
+    }
+
+    var meta = this.getSelectedAttributeMeta();
+    var lowColor = this.getColorPickerValue( $( '#mappingConfigContent .mapping-continuous-low' ) );
+    var highColor = this.getColorPickerValue( $( '#mappingConfigContent .mapping-continuous-high' ) );
+
+    if ( !lowColor || !highColor ) {
+      return null;
+    }
+
+    return {
+      elementType: this.getSelectedElementType(),
+      attribute: $( '#mappingAttribute' ).val(),
+      visualProperty: $( '#mappingVisualProperty' ).val(),
+      mappingType: 'continuous',
+      min: meta.min,
+      max: meta.max,
+      lowColor: lowColor,
+      highColor: highColor
+    };
+  },
+
+  getMappingFromUI: function () {
+    return this.getContinuousColorMappingFromUI();
+  },
+
+  _buildMapDataValue: function ( attribute, min, max, minMapper, maxMapper ) {
+    var mapMax = min === max ? max + 1 : max;
+    return 'mapData(' + attribute + ', ' + min + ', ' + mapMax + ', ' + minMapper + ', ' + maxMapper + ')';
+  },
+
+  _buildContinuousColorStyle: function ( visualProperty, mapDataValue ) {
+    if ( visualProperty === 'background-color' ) {
+      return {
+        'background-color': mapDataValue,
+        'text-outline-color': mapDataValue
+      };
+    }
+
+    if ( visualProperty === 'line-color' ) {
+      return {
+        'line-color': mapDataValue,
+        'target-arrow-color': mapDataValue,
+        'source-arrow-color': mapDataValue
+      };
+    }
+
+    var style = {};
+    style[ visualProperty ] = mapDataValue;
+    return style;
+  },
+
+  buildContinuousColorStyleRules: function ( mapping ) {
+    if ( !mapping || mapping.mappingType !== 'continuous' ) {
+      return [];
+    }
+
+    var elementType = mapping.elementType === 'edge' ? 'edge' : 'node';
+    var selector = elementType + '[' + mapping.attribute + ']';
+    var mapDataValue = this._buildMapDataValue(
+      mapping.attribute,
+      mapping.min,
+      mapping.max,
+      mapping.lowColor,
+      mapping.highColor
+    );
+
+    return [ {
+      selector: selector,
+      style: this._buildContinuousColorStyle( mapping.visualProperty, mapDataValue )
+    } ];
+  },
+
+  buildStyleRules: function ( mapping ) {
+    if ( !mapping || mapping.mappingType !== 'continuous' ) {
+      return [];
+    }
+
+    return this.buildContinuousColorStyleRules( mapping );
+  },
+
+  _applyStyleRules: function ( rules ) {
+    if ( _.isEmpty( rules ) ) {
+      return false;
+    }
+
+    if ( typeof graphPage === 'undefined' || !graphPage.cyGraph ) {
+      return false;
+    }
+
+    var cy = graphPage.cyGraph;
+
+    if ( !this.styleBeforeMapping ) {
+      this.styleBeforeMapping = cytoscapeGraph.getStylesheet( cy );
+    }
+
+    var tempStyle = cy.style();
+
+    _.each( rules, function ( rule ) {
+      tempStyle = tempStyle.selector( rule.selector ).style( rule.style );
+    } );
+
+    _.each( selectedElementsStylesheet, function ( elemStyle ) {
+      tempStyle = tempStyle.selector( elemStyle.selector ).style( elemStyle.style );
+    } );
+
+    tempStyle.update();
+
+    if ( graphPage.layoutEditor && graphPage.layoutEditor.undoRedoManager ) {
+      graphPage.layoutEditor.undoRedoManager.update( {
+        'action_type': 'attribute_mapping',
+        'data': {
+          'style': cytoscapeGraph.getStylesheet( cy ),
+          'positions': cytoscapeGraph.getRenderedNodePositionsMap( cy ),
+          'selected_elements': cy.elements( ':selected' ),
+          'metadata': layoutLearner.computeLayoutMetadata( cy )
+        }
+      } );
+    }
+
+    return true;
+  },
+
+  applyMapping: function () {
+    var mapping = this.getMappingFromUI();
+    if ( !mapping ) {
+      $.notify( {
+        message: 'Complete the mapping configuration before applying.'
+      }, {
+        type: 'warning'
+      } );
+      return false;
+    }
+
+    var rules = this.buildStyleRules( mapping );
+    if ( !this._applyStyleRules( rules ) ) {
+      return false;
+    }
+
+    $.notify( {
+      message: 'Attribute mapping applied.'
+    }, {
+      type: 'success'
+    } );
+
+    return true;
+  },
+
   populateAttributeDropdown: function () {
     var elementType = this.getSelectedElementType();
     var attributeMap = this.getAttributesForElementType( elementType );
@@ -387,6 +569,7 @@ var attributeMapping = {
 
   openPanel: function () {
     this.init();
+    this.styleBeforeMapping = null;
     this.clearMappingConfig();
     this.populateAttributeDropdown();
     this.populateVisualPropertyDropdown();
