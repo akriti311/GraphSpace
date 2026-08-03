@@ -386,8 +386,107 @@ var attributeMapping = {
     };
   },
 
+  isDiscreteColorMappingReady: function () {
+    if ( !this.isSelectionComplete() ) {
+      return false;
+    }
+
+    var meta = this.getSelectedAttributeMeta();
+    var visualProperty = $( '#mappingVisualProperty' ).val();
+
+    return !!(
+      meta &&
+      meta.type === 'categorical' &&
+      this.getSelectedMappingType() === 'discrete' &&
+      this.isColorVisualProperty( visualProperty ) &&
+      $( '#mappingConfigContent .mapping-discrete-color' ).length > 0
+    );
+  },
+
+  getDiscreteColorMappingFromUI: function () {
+    if ( !this.isDiscreteColorMappingReady() ) {
+      return null;
+    }
+
+    var valueColors = {};
+    var self = this;
+    var hasEmptyColor = false;
+
+    $( '#mappingConfigContent .mapping-discrete-color' ).each( function () {
+      var $picker = $( this );
+      var categoryValue = $picker.attr( 'data-category-value' );
+      var color = self.getColorPickerValue( $picker );
+
+      if ( !color ) {
+        hasEmptyColor = true;
+        return false;
+      }
+
+      valueColors[ categoryValue ] = color;
+    } );
+
+    if ( hasEmptyColor || _.isEmpty( valueColors ) ) {
+      return null;
+    }
+
+    return {
+      elementType: this.getSelectedElementType(),
+      attribute: $( '#mappingAttribute' ).val(),
+      visualProperty: $( '#mappingVisualProperty' ).val(),
+      mappingType: 'discrete',
+      valueColors: valueColors
+    };
+  },
+
   getMappingFromUI: function () {
-    return this.getContinuousColorMappingFromUI();
+    return this.getDiscreteColorMappingFromUI() ||
+      this.getContinuousColorMappingFromUI();
+  },
+
+  _formatSelectorAttributeValue: function ( value ) {
+    return '"' + String( value ).replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' ) + '"';
+  },
+
+  _buildAttributeSelector: function ( elementType, attribute, value ) {
+    var elementSelector = elementType === 'edge' ? 'edge' : 'node';
+    return elementSelector + '[' + attribute + ' = ' + this._formatSelectorAttributeValue( value ) + ']';
+  },
+
+  _buildDiscreteColorStyle: function ( visualProperty, color ) {
+    if ( visualProperty === 'background-color' ) {
+      return {
+        'background-color': color,
+        'text-outline-color': color
+      };
+    }
+
+    if ( visualProperty === 'line-color' ) {
+      return {
+        'line-color': color,
+        'target-arrow-color': color,
+        'source-arrow-color': color
+      };
+    }
+
+    var style = {};
+    style[ visualProperty ] = color;
+    return style;
+  },
+
+  buildDiscreteColorStyleRules: function ( mapping ) {
+    if ( !mapping || mapping.mappingType !== 'discrete' || !mapping.valueColors ) {
+      return [];
+    }
+
+    var self = this;
+    var elementType = mapping.elementType === 'edge' ? 'edge' : 'node';
+
+    return _.map( mapping.valueColors, function ( color, categoryValue ) {
+      return {
+        selector: self._buildAttributeSelector( elementType, mapping.attribute, categoryValue ),
+        style: self._buildDiscreteColorStyle( mapping.visualProperty, color )
+      };
+    } );
   },
 
   _buildMapDataValue: function ( attribute, min, max, minMapper, maxMapper ) {
@@ -438,11 +537,19 @@ var attributeMapping = {
   },
 
   buildStyleRules: function ( mapping ) {
-    if ( !mapping || mapping.mappingType !== 'continuous' ) {
+    if ( !mapping ) {
       return [];
     }
 
-    return this.buildContinuousColorStyleRules( mapping );
+    if ( mapping.mappingType === 'discrete' ) {
+      return this.buildDiscreteColorStyleRules( mapping );
+    }
+
+    if ( mapping.mappingType === 'continuous' ) {
+      return this.buildContinuousColorStyleRules( mapping );
+    }
+
+    return [];
   },
 
   _applyStyleRules: function ( rules ) {
