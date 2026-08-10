@@ -112,6 +112,11 @@ var attributeMapping = {
       attributeMapping.applyMapping();
     } );
 
+    $( '#resetMappingBtn' ).off( 'click' ).on( 'click', function ( e ) {
+      e.preventDefault();
+      attributeMapping.resetMapping();
+    } );
+
     this.bindFormEvents();
   },
 
@@ -612,6 +617,48 @@ var attributeMapping = {
 
     $.notify( {
       message: 'Attribute mapping applied.'
+    }, {
+      type: 'success'
+    } );
+
+    return true;
+  },
+
+  resetMapping: function () {
+    if ( !this.styleBeforeMapping ) {
+      $.notify( {
+        message: 'No mapping to reset.'
+      }, {
+        type: 'warning'
+      } );
+      return false;
+    }
+
+    if ( typeof graphPage === 'undefined' || !graphPage.cyGraph ) {
+      return false;
+    }
+
+    var cy = graphPage.cyGraph;
+
+    cytoscapeGraph.applyStylesheet( cy, {
+      style: this.styleBeforeMapping
+    } );
+    this.styleBeforeMapping = null;
+
+    if ( graphPage.layoutEditor && graphPage.layoutEditor.undoRedoManager ) {
+      graphPage.layoutEditor.undoRedoManager.update( {
+        'action_type': 'attribute_mapping_reset',
+        'data': {
+          'style': cytoscapeGraph.getStylesheet( cy ),
+          'positions': cytoscapeGraph.getRenderedNodePositionsMap( cy ),
+          'selected_elements': cy.elements( ':selected' ),
+          'metadata': layoutLearner.computeLayoutMetadata( cy )
+        }
+      } );
+    }
+
+    $.notify( {
+      message: 'Attribute mapping reset.'
     }, {
       type: 'success'
     } );
