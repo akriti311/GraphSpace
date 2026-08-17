@@ -1,6 +1,3 @@
-/**
- * Visual Attribute Mapping — attribute discovery from graph_json.
- */
 var attributeMapping = {
   RESERVED_NODE_ATTRS: [ 'id', 'name', 'label', 'aliases', 'popup', 'k', 'parent' ],
   RESERVED_EDGE_ATTRS: [ 'id', 'source', 'target', 'name', 'is_directed', 'popup', 'k' ],
@@ -15,7 +12,11 @@ var attributeMapping = {
     '#990099', '#0099c6', '#dd4477', '#66aa00'
   ],
 
-  // Which visual properties support which mapping types.
+  DEFAULT_MIN_NODE_SIZE: 30,
+  DEFAULT_MAX_NODE_SIZE: 80,
+  DEFAULT_MIN_EDGE_WIDTH: 2,
+  DEFAULT_MAX_EDGE_WIDTH: 10,
+
   VISUAL_PROPERTIES: {
     node: [
       { id: 'background-color', label: 'Node color', discrete: true, continuous: true },
@@ -193,6 +194,10 @@ var attributeMapping = {
     return this.COLOR_VISUAL_PROPERTIES.indexOf( propertyId ) !== -1;
   },
 
+  isWidthVisualProperty: function ( propertyId ) {
+    return propertyId === 'width';
+  },
+
   isSelectionComplete: function () {
     return !!(
       $( '#mappingAttribute' ).val() &&
@@ -301,6 +306,54 @@ var attributeMapping = {
     $( '#mappingConfigSection' ).show();
   },
 
+  renderContinuousWidthConfig: function ( meta ) {
+    var elementType = this.getSelectedElementType();
+    var isEdge = elementType === 'edge';
+    var minLabel = isEdge ? 'Min width' : 'Min size';
+    var maxLabel = isEdge ? 'Max width' : 'Max size';
+    var defaultMin = isEdge ? this.DEFAULT_MIN_EDGE_WIDTH : this.DEFAULT_MIN_NODE_SIZE;
+    var defaultMax = isEdge ? this.DEFAULT_MAX_EDGE_WIDTH : this.DEFAULT_MAX_NODE_SIZE;
+    var $container = $( '<div>' );
+
+    $container.append( $( '<p>', {
+      'class': 'text-center text-muted',
+      text: 'Range: ' + meta.min + ' to ' + meta.max
+    } ) );
+
+    var minRow = $( '<div>', { 'class': 'form-group' } );
+    minRow.append( $( '<label>', {
+      'class': 'col-sm-5 control-label',
+      text: minLabel + ' (' + meta.min + ')'
+    } ) );
+    minRow.append( $( '<div>', { 'class': 'col-sm-7' } ).append(
+      $( '<input>', {
+        type: 'number',
+        min: 1,
+        'class': 'form-control mapping-continuous-width-min',
+        value: defaultMin
+      } )
+    ) );
+    $container.append( minRow );
+
+    var maxRow = $( '<div>', { 'class': 'form-group' } );
+    maxRow.append( $( '<label>', {
+      'class': 'col-sm-5 control-label',
+      text: maxLabel + ' (' + meta.max + ')'
+    } ) );
+    maxRow.append( $( '<div>', { 'class': 'col-sm-7' } ).append(
+      $( '<input>', {
+        type: 'number',
+        min: 1,
+        'class': 'form-control mapping-continuous-width-max',
+        value: defaultMax
+      } )
+    ) );
+    $container.append( maxRow );
+
+    $( '#mappingConfigContent' ).html( $container );
+    $( '#mappingConfigSection' ).show();
+  },
+
   _buildColorPicker: function ( defaultColor ) {
     var $picker = $( '<div>', { 'class': 'input-group colorpicker-component' } );
     $picker.append( $( '<input>', {
@@ -339,6 +392,8 @@ var attributeMapping = {
     if ( mappingType === 'continuous' && meta.type === 'numerical' ) {
       if ( this.isColorVisualProperty( visualProperty ) ) {
         this.renderContinuousColorConfig( meta );
+      } else if ( this.isWidthVisualProperty( visualProperty ) ) {
+        this.renderContinuousWidthConfig( meta );
       } else {
         this.renderConfigMessage( 'Configuration for this visual property is coming soon.' );
       }
@@ -445,7 +500,61 @@ var attributeMapping = {
 
   getMappingFromUI: function () {
     return this.getDiscreteColorMappingFromUI() ||
-      this.getContinuousColorMappingFromUI();
+      this.getContinuousColorMappingFromUI() ||
+      this.getContinuousWidthMappingFromUI();
+  },
+
+  _parsePositiveNumber: function ( value ) {
+    var number = parseFloat( value );
+    return !isNaN( number ) && isFinite( number ) && number > 0 ? number : null;
+  },
+
+  isContinuousWidthMappingReady: function () {
+    if ( !this.isSelectionComplete() ) {
+      return false;
+    }
+
+    var meta = this.getSelectedAttributeMeta();
+    var visualProperty = $( '#mappingVisualProperty' ).val();
+
+    return !!(
+      meta &&
+      meta.type === 'numerical' &&
+      this.getSelectedMappingType() === 'continuous' &&
+      this.isWidthVisualProperty( visualProperty ) &&
+      $( '#mappingConfigContent .mapping-continuous-width-min' ).length > 0 &&
+      $( '#mappingConfigContent .mapping-continuous-width-max' ).length > 0
+    );
+  },
+
+  getContinuousWidthMappingFromUI: function () {
+    if ( !this.isContinuousWidthMappingReady() ) {
+      return null;
+    }
+
+    var meta = this.getSelectedAttributeMeta();
+    var elementType = this.getSelectedElementType();
+    var minSize = this._parsePositiveNumber(
+      $( '#mappingConfigContent .mapping-continuous-width-min' ).val()
+    );
+    var maxSize = this._parsePositiveNumber(
+      $( '#mappingConfigContent .mapping-continuous-width-max' ).val()
+    );
+
+    if ( !minSize || !maxSize ) {
+      return null;
+    }
+
+    return {
+      elementType: elementType,
+      attribute: $( '#mappingAttribute' ).val(),
+      visualProperty: 'width',
+      mappingType: 'continuous',
+      min: meta.min,
+      max: meta.max,
+      minSize: minSize,
+      maxSize: maxSize
+    };
   },
 
   _formatSelectorAttributeValue: function ( value ) {
@@ -541,6 +650,35 @@ var attributeMapping = {
     } ];
   },
 
+  buildContinuousWidthStyleRules: function ( mapping ) {
+    if ( !mapping || mapping.mappingType !== 'continuous' || mapping.visualProperty !== 'width' ) {
+      return [];
+    }
+
+    var elementType = mapping.elementType === 'edge' ? 'edge' : 'node';
+    var selector = elementType + '[' + mapping.attribute + ']';
+    var mapDataValue = this._buildMapDataValue(
+      mapping.attribute,
+      mapping.min,
+      mapping.max,
+      mapping.minSize,
+      mapping.maxSize
+    );
+
+    var style = {
+      width: mapDataValue
+    };
+
+    if ( elementType === 'node' ) {
+      style.height = mapDataValue;
+    }
+
+    return [ {
+      selector: selector,
+      style: style
+    } ];
+  },
+
   buildStyleRules: function ( mapping ) {
     if ( !mapping ) {
       return [];
@@ -551,6 +689,9 @@ var attributeMapping = {
     }
 
     if ( mapping.mappingType === 'continuous' ) {
+      if ( mapping.visualProperty === 'width' ) {
+        return this.buildContinuousWidthStyleRules( mapping );
+      }
       return this.buildContinuousColorStyleRules( mapping );
     }
 
